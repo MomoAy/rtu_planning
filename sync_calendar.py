@@ -13,12 +13,19 @@ GitHub Actions (voir .github/workflows/update-calendar.yml).
 import hashlib
 import sys
 from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 import requests
 from bs4 import BeautifulSoup
 from dateutil.relativedelta import relativedelta
 
 BASE_URL = "https://nodarbibas.rtu.lv"
+
+# La date brute renvoyée par l'API (eventDate) représente minuit heure de
+# Riga. Il faut l'interpréter explicitement dans ce fuseau, sinon le résultat
+# dépend du fuseau de la machine qui exécute le script (ex: UTC sur GitHub
+# Actions) et les cours peuvent se décaler d'un jour.
+RIGA_TZ = ZoneInfo("Europe/Riga")
 
 # ---------------------------------------------------------------------------
 # CONFIG — à adapter si besoin (nouveau semestre, changement de groupe, etc.)
@@ -86,8 +93,8 @@ def get_semester_id() -> tuple[str, str]:
 
 def get_semester_dates(ctx: dict) -> tuple[datetime, datetime]:
     json = api_post("getChousenSemesterStartEndDate", ctx)
-    start = datetime.fromtimestamp(json["startDate"] // 1000)
-    end = datetime.fromtimestamp(json["endDate"] // 1000)
+    start = datetime.fromtimestamp(json["startDate"] // 1000, tz=RIGA_TZ)
+    end = datetime.fromtimestamp(json["endDate"] // 1000, tz=RIGA_TZ)
     return start, end
 
 
@@ -142,14 +149,14 @@ def get_all_raw_events(ctx: dict, start: datetime, end: datetime) -> list:
 
 
 def parse_event(raw: dict) -> dict:
-    event_date = datetime.fromtimestamp(raw["eventDate"] // 1000)
+    event_date = datetime.fromtimestamp(raw["eventDate"] // 1000, tz=RIGA_TZ)
     start_t = raw["customStart"]
     end_t = raw["customEnd"]
     return {
         "subject": (raw.get("eventTempNameEn") or raw.get("eventTempName") or "").strip(),
         "location": (raw.get("roomInfoTextEn") or raw.get("roomInfoText") or "").strip(),
-        "start": event_date.replace(hour=start_t["hour"], minute=start_t["minute"]),
-        "end": event_date.replace(hour=end_t["hour"], minute=end_t["minute"]),
+        "start": event_date.replace(hour=start_t["hour"], minute=start_t["minute"], tzinfo=None),
+        "end": event_date.replace(hour=end_t["hour"], minute=end_t["minute"], tzinfo=None),
     }
 
 
